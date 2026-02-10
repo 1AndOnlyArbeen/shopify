@@ -1,0 +1,421 @@
+
+{% comment %}
+
+i need to create a block that auto add the charger when the user add the iphone in the cart, here are the requirements for the block:
+
+1. when the user add the iphone in the cart, the Charger should also get automatically adeed to the cart with the same quantity as the iphone.
+2. when the user update the quantity of the iphone in the cart, the quantity of the charger should also get updated to match the iphone quantity.
+3. when the user remove the iphone from the cart, the charger should also get removed from the cart.
+4. if user remove the charger from the cart while the iphone is still in the cart, the charger should get added back to the cart automatically.
+
+5. if iphone is aleady in the cart then cart should auto add the cahrger to the cart with the same quantity as the iphone.
+
+ iphone variant id : 47535108292828
+  charger variant id : 47535108948188
+   here are the variant ids for the iphone and the charger, but i can also make these variant ids configurable from the block settings, so that it can be used for different products in the future if needed.
+
+{% endcomment %}
+{% comment %}
+  iPhone Accessory Manager Block
+  Manages required charger accessory for iPhone products
+{% endcomment %}
+
+{%- style -%}
+  .iphone-accessory-manager {
+    display: none; /* This block doesn't need visual elements */
+  }
+{%- endstyle -%}
+
+<div class="iphone-accessory-manager" data-iphone-manager>
+  {% comment %}
+    Store variant IDs as data attributes for JavaScript access
+  {% endcomment %}
+  <script type="application/json" data-variant-ids>
+    {
+      "iphone": {{ block.settings.iphone_variant_id | default: 47535108292828 }},
+      "charger": {{ block.settings.charger_variant_id | default: 47535108948188 }}
+    }
+  </script>
+</div>
+
+<script>
+  (function() {
+    'use strict';
+    
+    // Configuration
+    const CONFIG = {
+      iphoneVariantId: {{ block.settings.iphone_variant_id | default: 47535108292828 }},
+      chargerVariantId: {{ block.settings.charger_variant_id | default: 47535108948188 }},
+      syncDelay: 1000, // Delay to prevent rapid API calls
+      maxRetries: 3,
+      retryDelay: 1000
+    };
+    
+    // State management
+    let isSyncing = false;
+    let syncTimeout = null;
+    let cartCache = null;
+    let retryCount = 0;
+    
+    // DOM selectors for cart updates
+    const CART_SELECTORS = {
+      cartForm: '[action="/cart"]',
+      cartDrawer: '[id*="cart-drawer"], [class*="cart-drawer"], .drawer--cart',
+      cartUpdateButtons: '[name="update"], [name="checkout"]',
+      quantityInputs: 'input[name="updates[]"], input[name^="updates["]',
+      removeButtons: 'a[href*="/cart/change"], button[data-cart-remove]'
+    };
+    
+    /**
+     * Fetch current cart data from Shopify API
+     */
+    async function fetchCart() {
+      try {
+        const response = await fetch('/cart.js', {
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Cart fetch failed: ${response.status}`);
+        }
+        
+        cartCache = await response.json();
+        return cartCache;
+      } catch (error) {
+        console.error('Error fetching cart:', error);
+        return null;
+      }
+    }
+    
+    /**
+     * Find item in cart by variant ID
+     */
+    function findCartItem(cart, variantId) {
+      return cart.items.find(item => item.variant_id === variantId);
+    }
+    
+    /**
+     * Add charger to cart
+     */
+    async function addCharger(quantity) {
+      if (isSyncing) return false;
+      
+      isSyncing = true;
+      
+      try {
+        const response = await fetch('/cart/add.js', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            items: [{
+              id: CONFIG.chargerVariantId,
+              quantity: quantity
+            }]
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Add to cart failed: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        // Refresh cart data and UI
+        await fetchCart();
+        dispatchCartUpdateEvent();
+        
+        retryCount = 0;
+        return true;
+      } catch (error) {
+        console.error('Error adding charger:', error);
+        
+        // Retry logic
+        if (retryCount < CONFIG.maxRetries) {
+          retryCount++;
+          setTimeout(() => addCharger(quantity), CONFIG.retryDelay * retryCount);
+        }
+        
+        return false;
+      } finally {
+        isSyncing = false;
+      }
+    }
+    
+    /**
+     * Update charger quantity in cart
+     */
+    async function updateCharger(chargerKey, quantity) {
+      if (isSyncing) return false;
+      
+      isSyncing = true;
+      
+      try {
+        const response = await fetch('/cart/change.js', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            id: chargerKey,
+            quantity: quantity
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Cart update failed: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        // Refresh cart data and UI
+        await fetchCart();
+        dispatchCartUpdateEvent();
+        
+        retryCount = 0;
+        return true;
+      } catch (error) {
+        console.error('Error updating charger:', error);
+        
+        // Retry logic
+        if (retryCount < CONFIG.maxRetries) {
+          retryCount++;
+          setTimeout(() => updateCharger(chargerKey, quantity), CONFIG.retryDelay * retryCount);
+        }
+        
+        return false;
+      } finally {
+        isSyncing = false;
+      }
+    }
+    
+    /**
+     * Remove charger from cart
+     */
+    async function removeCharger(chargerKey) {
+      if (isSyncing) return false;
+      
+      isSyncing = true;
+      
+      try {
+        const response = await fetch('/cart/change.js', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            id: chargerKey,
+            quantity: 0
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Cart remove failed: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        // Refresh cart data and UI
+        await fetchCart();
+        dispatchCartUpdateEvent();
+        
+        retryCount = 0;
+        return true;
+      } catch (error) {
+        console.error('Error removing charger:', error);
+        return false;
+      } finally {
+        isSyncing = false;
+      }
+    }
+    
+    /**
+     * Sync charger with iPhone based on cart state
+     */
+    async function syncChargerWithiPhone() {
+      // Prevent multiple simultaneous syncs
+      if (isSyncing) {
+        return;
+      }
+      
+      // Clear any pending sync
+      if (syncTimeout) {
+        clearTimeout(syncTimeout);
+      }
+      
+      // Debounce sync to prevent rapid API calls
+      syncTimeout = setTimeout(async () => {
+        const cart = await fetchCart();
+        if (!cart) return;
+        
+        const iphoneItem = findCartItem(cart, CONFIG.iphoneVariantId);
+        const chargerItem = findCartItem(cart, CONFIG.chargerVariantId);
+        
+        // Scenario 1: iPhone is in cart
+        if (iphoneItem) {
+          // iPhone exists but charger doesn't - add it
+          if (!chargerItem) {
+            console.log('iPhone detected, adding charger...');
+            await addCharger(iphoneItem.quantity);
+          }
+          // iPhone and charger exist but quantities don't match - update charger
+          else if (chargerItem.quantity !== iphoneItem.quantity) {
+            console.log('Updating charger quantity to match iPhone...');
+            await updateCharger(chargerItem.key, iphoneItem.quantity);
+          }
+        }
+        // Scenario 2: iPhone is not in cart but charger is - remove charger
+        else if (chargerItem) {
+          console.log('iPhone removed, removing charger...');
+          await removeCharger(chargerItem.key);
+        }
+      }, CONFIG.syncDelay);
+    }
+    
+    /**
+     * Dispatch custom event for cart updates
+     * This helps other parts of the theme know the cart changed
+     */
+    function dispatchCartUpdateEvent() {
+      const event = new CustomEvent('iphone-accessory:cart-updated', {
+        detail: { timestamp: Date.now() }
+      });
+      document.dispatchEvent(event);
+    }
+    
+    /**
+     * Set up event listeners for cart interactions
+     */
+    function setupEventListeners() {
+      // Listen for Shopify's cart update events
+      document.addEventListener('ajaxCart:afterCartUpdate', syncChargerWithiPhone);
+      
+      // Listen for custom cart update events
+      document.addEventListener('cart:updated', syncChargerWithiPhone);
+      
+      // Listen for quantity changes
+      document.addEventListener('change', function(event) {
+        const target = event.target;
+        if (target.matches && target.matches(CART_SELECTORS.quantityInputs)) {
+          syncChargerWithiPhone();
+        }
+      });
+      
+      // Listen for remove button clicks
+      document.addEventListener('click', function(event) {
+        const target = event.target;
+        const removeButton = target.closest(CART_SELECTORS.removeButtons);
+        
+        if (removeButton) {
+          // Small delay to allow Shopify's native removal to complete
+          setTimeout(syncChargerWithiPhone, 500);
+        }
+      });
+      
+      // Listen for cart form submissions
+      document.addEventListener('submit', function(event) {
+        const form = event.target;
+        if (form.matches && form.matches(CART_SELECTORS.cartForm)) {
+          syncChargerWithiPhone();
+        }
+      });
+      
+      // Listen for messages from cart drawer iframes
+      window.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'shopify:cart:updated') {
+          syncChargerWithiPhone();
+        }
+      });
+    }
+    
+    /**
+     * Initialize the accessory manager
+     */
+    async function init() {
+      console.log('Initializing iPhone accessory manager...');
+      
+      // Initial sync on page load
+      await syncChargerWithiPhone();
+      
+      // Set up event listeners
+      setupEventListeners();
+      
+      // Poll for cart changes (fallback for themes without events)
+      setInterval(syncChargerWithiPhone, 10000);
+      
+      console.log('iPhone accessory manager initialized');
+    }
+    
+    // Initialize when DOM is ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+    
+    // Expose for debugging
+    window.iPhoneAccessoryManager = {
+      sync: syncChargerWithiPhone,
+      config: CONFIG
+    };
+    
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "iPhone Accessory Manager",
+  "target": "section",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Product Variant Configuration"
+    },
+    {
+      "type": "paragraph",
+      "content": "Configure the variant IDs for the main product and its required accessory."
+    },
+    {
+      "type": "number",
+      "id": "iphone_variant_id",
+      "label": "iPhone Variant ID",
+      "default": 47535108292828,
+      "info": "Enter the variant ID of the iPhone product"
+    },
+    {
+      "type": "number",
+      "id": "charger_variant_id",
+      "label": "Charger Variant ID",
+      "default": 47535108948188,
+      "info": "Enter the variant ID of the charger accessory"
+    },
+    {
+      "type": "header",
+      "content": "Advanced Settings"
+    },
+    {
+      "type": "paragraph",
+      "content": "These settings control the sync behavior."
+    },
+    {
+      "type": "range",
+      "id": "sync_delay",
+      "label": "Sync Delay (ms)",
+      "min": 500,
+      "max": 3000,
+      "step": 100,
+      "default": 1000,
+      "info": "Delay between cart updates to prevent rapid API calls"
+    }
+  ],
+  "enabled_on": {
+    "templates": ["*"]
+  }
+}
+{% endschema %}
