@@ -1,43 +1,28 @@
-{% comment %}
-iPhone Bundle Block - "Buy iPhone, Get Charger Free"
+{%- comment -%}
+  shoopify Buy iphone get free charger
 
-This block implements automatic cart synchronization logic for a product bundle where:
-1. When iPhone is added to cart, charger is automatically added with matching quantity
-2. Charger quantity always matches iPhone quantity (updates on iPhone quantity changes)
-3. When iPhone is removed, charger is automatically removed
-4. When charger is removed while iPhone exists, it's automatically re-added
-5. Prevents infinite cart update loops and handles all edge cases
+     when the user add  the iphone in the cart , add the Charger in the cart auto ,
+     when the user remove the iphone from the cart , remove the Charger from the cart auto ,
+     when the user change the quantity of the iphone in the cart , change the quantity of the Charger in the cart auto
+     when the user remove the charger while the iphone is in the cart , auto re-add the charger in the cart,
 
-Uses Shopify AJAX Cart API endpoints for real-time cart manipulation.
-{% endcomment %}
 
-<div
-  id="iphone-bundle"
-  data-iphone-variant-id="{{ block.settings.iphone_variant_id }}"
-  data-charger-variant-id="{{ block.settings.charger_variant_id }}"
-  data-bundle-name="iPhone with Free Charger">
-</div>
+     logic to build it
+  1. i have to see the cart if the iphone is in the cart or not if yes then add the charger in the cart.
+  2. if the user remove the iphone from the cart then remove the charger from the cart
+  3. if the user change the quantity of the iphone in the cart then change the quantity of the charger in the cart
+  4. if the user remove the charger while the iphone is in the cart then auto re-add the charger in the cart,for this i have to use the cart ajax api to add , remove and change the quantity of the charger in the cart, but to remember is that i dont need to refresh the whole page it should do auto refresh.
 
-<script src="{{ 'iphone-bundle.js' | asset_url }}" defer></script>
+  iphoneVariantId = '47535108292828'
+  chargerVariantId = '47535108948188'
+{%- endcomment -%}
 
+{{ 'iphone-bogo.js' | asset_url | script_tag }}
 
 {% schema %}
 {
-  "name": "iPhone charger",
-  "target": "section",
-  "settings": [
-    {
-      "type": "text",
-      "id": "iphone_variant_id",
-      "label": "iPhone Variant ID",
-      "default": "47535108292828"
-    },
-    {
-      "type": "text",
-      "id": "charger_variant_id",
-      "label": "Charger Variant ID",
-      "default": "47535108948188"
-    }
-  ]
+  "name": "iPhone BOGO",
+  "target": "body",
+  "settings": []
 }
 {% endschema %}
