@@ -51,7 +51,7 @@
 
     try {
 
-      // if cart is not changed then do nothing only watch if the cart is changing or not 
+      // if cart is not changed then do nothing otherwise process with updates  
 
       const cart = await getCart();
       const cartJson = JSON.stringify(cart.items);
